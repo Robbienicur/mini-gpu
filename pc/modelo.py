@@ -29,3 +29,13 @@ def suma_resta(A, B, resta=False):
         C.append(r)
         sat = sat or s
     return C, sat
+
+def multiplica(A, B):
+    C, sat = [0] * 16, False
+    for i in range(4):
+        for j in range(4):
+            acc = sum(A[4 * i + k] * B[4 * k + j] for k in range(4))
+            r, s = satura(redondea(acc, F))
+            C[4 * i + j] = r
+            sat = sat or s
+    return C, sat
