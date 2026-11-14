@@ -12,28 +12,34 @@ module inversa_lu (
 
     localparam S_ESPERA = 4'd0;
     localparam S_CARGA  = 4'd1;
-    localparam S_LU_PIV = 4'd2;
-    localparam S_LU_FAC = 4'd3;
-    localparam S_LU_ELM = 4'd4;
-    localparam S_DET    = 4'd5;
-    localparam S_FWD_A  = 4'd6;
-    localparam S_FWD_B  = 4'd7;
-    localparam S_BWD_A  = 4'd8;
-    localparam S_BWD_B  = 4'd9;
-    localparam S_GUARDA = 4'd10;
+    localparam S_BUSCA  = 4'd2;
+    localparam S_SWAP   = 4'd3;
+    localparam S_LU_PIV = 4'd4;
+    localparam S_LU_FAC = 4'd5;
+    localparam S_LU_ELM = 4'd6;
+    localparam S_DET    = 4'd7;
+    localparam S_FWD_A  = 4'd8;
+    localparam S_FWD_B  = 4'd9;
+    localparam S_BWD_A  = 4'd10;
+    localparam S_BWD_B  = 4'd11;
+    localparam S_GUARDA = 4'd12;
 
     reg [3:0] estado;
     reg signed [31:0] M [0:15];
     reg signed [31:0] y [0:3];
     reg signed [31:0] xv [0:3];
-    reg signed [31:0] piv, fac;
+    reg [1:0] perm [0:3];
+    reg det_neg;
+    reg [1:0] piv_r;
+    reg signed [31:0] max_v, piv, fac;
     reg signed [63:0] acc, det_acc;
     reg [1:0] k, i, j, col;
     integer t;
 
+    wire signed [31:0] cur_v = M[4*i + k];
+    wire signed [31:0] abs_v = cur_v[31] ? -cur_v : cur_v;
     wire signed [63:0] num_fac = $signed(M[4*i + k]) <<< 10;
     wire signed [63:0] prod_lu = $signed(fac) * $signed(M[4*k + j]);
-    wire signed [63:0] num_bwd = acc <<< 10;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -47,6 +53,9 @@ module inversa_lu (
             i       <= 2'd0;
             j       <= 2'd0;
             col     <= 2'd0;
+            piv_r   <= 2'd0;
+            det_neg <= 1'b0;
+            max_v   <= 32'sd0;
             piv     <= 32'sd0;
             fac     <= 32'sd0;
             acc     <= 64'sd0;
@@ -57,17 +66,55 @@ module inversa_lu (
             case (estado)
                 S_ESPERA: begin
                     if (start) begin
-                        sing   <= 1'b0;
-                        ovf    <= 1'b0;
-                        estado <= S_CARGA;
+                        sing    <= 1'b0;
+                        ovf     <= 1'b0;
+                        det_neg <= 1'b0;
+                        estado  <= S_CARGA;
                     end
                 end
 
                 S_CARGA: begin
                     for (t = 0; t < 16; t = t + 1)
                         M[t] <= {{14{A[18*t + 17]}}, A[18*t +: 18]};
-                    k      <= 2'd0;
-                    estado <= S_LU_PIV;
+                    perm[0] <= 2'd0;
+                    perm[1] <= 2'd1;
+                    perm[2] <= 2'd2;
+                    perm[3] <= 2'd3;
+                    k       <= 2'd0;
+                    i       <= 2'd0;
+                    piv_r   <= 2'd0;
+                    max_v   <= 32'sd0;
+                    estado  <= S_BUSCA;
+                end
+
+                S_BUSCA: begin
+                    if (i == k || abs_v > max_v) begin
+                        max_v <= abs_v;
+                        piv_r <= i;
+                    end
+                    if (i == 2'd3) begin
+                        j      <= 2'd0;
+                        estado <= S_SWAP;
+                    end else begin
+                        i <= i + 2'd1;
+                    end
+                end
+
+                S_SWAP: begin
+                    if (piv_r != k) begin
+                        M[4*k + j]     <= M[4*piv_r + j];
+                        M[4*piv_r + j] <= M[4*k + j];
+                        if (j == 2'd3) begin
+                            perm[k]     <= perm[piv_r];
+                            perm[piv_r] <= perm[k];
+                            det_neg     <= ~det_neg;
+                            estado      <= S_LU_PIV;
+                        end else begin
+                            j <= j + 2'd1;
+                        end
+                    end else begin
+                        estado <= S_LU_PIV;
+                    end
                 end
 
                 S_LU_PIV: begin
@@ -100,7 +147,10 @@ module inversa_lu (
                     if (j == 2'd3) begin
                         if (i == 2'd3) begin
                             k      <= k + 2'd1;
-                            estado <= S_LU_PIV;
+                            i      <= k + 2'd1;
+                            piv_r  <= k + 2'd1;
+                            max_v  <= 32'sd0;
+                            estado <= S_BUSCA;
                         end else begin
                             i      <= i + 2'd1;
                             estado <= S_LU_FAC;
@@ -122,10 +172,10 @@ module inversa_lu (
                 end
 
                 S_FWD_A: begin
-                    acc <= (i == col) ? 64'sd1024 : 64'sd0;
+                    acc <= (perm[i] == col) ? 64'sd1024 : 64'sd0;
                     j   <= 2'd0;
                     if (i == 2'd0) begin
-                        y[0] <= (col == 2'd0) ? 32'sd1024 : 32'sd0;
+                        y[0] <= (perm[0] == col) ? 32'sd1024 : 32'sd0;
                         i    <= 2'd1;
                     end else begin
                         estado <= S_FWD_B;
@@ -151,8 +201,8 @@ module inversa_lu (
                 S_BWD_A: begin
                     acc <= y[i];
                     if (i == 2'd3) begin
-                        xv[3]  <= ($signed(y[3]) <<< 10) / $signed(M[15]);
-                        i      <= 2'd2;
+                        xv[3] <= ($signed(y[3]) <<< 10) / $signed(M[15]);
+                        i     <= 2'd2;
                     end else begin
                         j      <= i + 2'd1;
                         estado <= S_BWD_B;
@@ -188,7 +238,7 @@ module inversa_lu (
 
                     if (i == 2'd3) begin
                         if (col == 2'd3) begin
-                            det_out <= det_acc[31:0];
+                            det_out <= det_neg ? -det_acc[31:0] : det_acc[31:0];
                             done    <= 1'b1;
                             estado  <= S_ESPERA;
                         end else begin

@@ -24,11 +24,11 @@ module tb_inversa;
         #20 reset = 0;
         #20 start = 1;
         #20 start = 0;
-        #4000;
+        #5000;
         A[35:18] = 18'd2048; A[89:72] = 18'd2048; A[17:0] = 18'd1024; A[107:90] = 18'd4096;
         #20 start = 1;
         #20 start = 0;
-        #4000;
+        #5000;
         $finish;
     end
 endmodule
