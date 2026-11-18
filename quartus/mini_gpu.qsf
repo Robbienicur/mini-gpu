@@ -14,6 +14,7 @@ set_global_assignment -name VERILOG_FILE ../rtl/uart_tx.v
 set_global_assignment -name VERILOG_FILE ../rtl/decodificador.v
 set_global_assignment -name VERILOG_FILE ../rtl/suma_resta.v
 set_global_assignment -name VERILOG_FILE ../rtl/multiplica_seq.v
+set_global_assignment -name VERILOG_FILE ../rtl/reciproco.v
 set_global_assignment -name VERILOG_FILE ../rtl/inversa_dasgupta.v
 
 set_location_assignment PIN_P11 -to CLOCK_50

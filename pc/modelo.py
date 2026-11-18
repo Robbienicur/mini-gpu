@@ -39,3 +39,12 @@ def multiplica(A, B):
             C[4 * i + j] = r
             sat = sat or s
     return C, sat
+
+TABLA = [math.floor((1 / (0.5 + (i + 0.5) / 128)) * 2**17 + 0.5) for i in range(64)]
+
+def reciproco(m):
+    x = TABLA[(m >> 11) & 63]
+    for _ in range(2):
+        e = (1 << 19) - ((m * x) >> 17)
+        x = (x * e) >> 18
+    return x
