@@ -48,3 +48,38 @@ def reciproco(m):
         e = (1 << 19) - ((m * x) >> 17)
         x = (x * e) >> 18
     return x
+
+def det3(m):
+    d0 = m[1][1] * m[2][2] - m[1][2] * m[2][1]
+    d1 = m[1][0] * m[2][2] - m[1][2] * m[2][0]
+    d2 = m[1][0] * m[2][1] - m[1][1] * m[2][0]
+    return m[0][0] * d0 - m[0][1] * d1 + m[0][2] * d2
+
+def inversa(A):
+    M = [A[4 * r:4 * r + 4] for r in range(4)]
+    cof = [0] * 16
+    for i in range(4):
+        for j in range(4):
+            menor = [[M[r][c] for c in range(4) if c != j] for r in range(4) if r != i]
+            d = det3(menor)
+            cof[4 * i + j] = -d if (i + j) % 2 else d
+    D = sum(M[0][c] * cof[c] for c in range(4))
+    if D == 0:
+        return [0] * 16, 0, True, False
+    Dabs, k = abs(D), 0
+    while not (Dabs >> 73) & 1:
+        Dabs <<= 1
+        k += 1
+    x = reciproco(Dabs >> 56)
+    sh = 71 - k
+    X, ovf = [0] * 16, False
+    for n in range(16):
+        r, c = n // 4, n % 4
+        P = cof[4 * c + r] * x
+        if D < 0:
+            P = -P
+        v, s = satura(redondea(P, sh))
+        X[n] = v
+        ovf = ovf or s
+    det_q, _ = satura(redondea(D, 30), 32)
+    return X, det_q, False, ovf

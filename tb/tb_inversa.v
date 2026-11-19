@@ -6,7 +6,7 @@ module tb_inversa;
     wire [31:0]  det;
     wire         sing, ovf, done;
 
-    inversa_dasgupta DUT (.clk(clk), .reset(reset), .start(start), .A(A), .X(X), .det_out(det),
+    inversa DUT (.clk(clk), .reset(reset), .start(start), .A(A), .X(X), .det_out(det),
                  .sing(sing), .ovf(ovf), .done(done));
 
     always #10 clk = ~clk;
@@ -24,11 +24,11 @@ module tb_inversa;
         #20 reset = 0;
         #20 start = 1;
         #20 start = 0;
-        #4000;
+        #3000;
         A[35:18] = 18'd2048; A[89:72] = 18'd2048; A[17:0] = 18'd1024; A[107:90] = 18'd4096;
         #20 start = 1;
         #20 start = 0;
-        #4000;
+        #3000;
         $finish;
     end
 endmodule
