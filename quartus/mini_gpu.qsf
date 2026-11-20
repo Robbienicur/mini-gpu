@@ -9,6 +9,7 @@ set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
 set_global_assignment -name SDC_FILE mini_gpu.sdc
 
+set_global_assignment -name VERILOG_FILE ../rtl/mini_gpu_top.v
 set_global_assignment -name VERILOG_FILE ../rtl/uart_rx.v
 set_global_assignment -name VERILOG_FILE ../rtl/uart_tx.v
 set_global_assignment -name VERILOG_FILE ../rtl/decodificador.v
