@@ -5,7 +5,7 @@ module tb_multiplica;
     wire [287:0] C;
     wire         done, sat;
 
-    multiplica_seq DUT (.clk(clk), .reset(reset), .start(start), .A(A), .B(B), .C(C), .done(done), .sat(sat));
+    multiplica DUT (.clk(clk), .reset(reset), .start(start), .A(A), .B(B), .C(C), .done(done), .sat(sat));
 
     always #10 clk = ~clk;
 
@@ -20,7 +20,7 @@ module tb_multiplica;
         #20 reset = 0;
         #20 start = 1;
         #20 start = 0;
-        #1500;
+        #500;
         $finish;
     end
 endmodule
