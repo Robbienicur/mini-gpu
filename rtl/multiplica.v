@@ -29,7 +29,7 @@ module multiplica (
         input signed [39:0] x;
         reg   signed [39:0] y;
         begin
-            y = x >>> 10;
+            y = (x + 40'sd512) >>> 10;
             if (y > 40'sd131071)
                 ajusta = {1'b1, 18'h1FFFF};
             else if (y < -40'sd131072)

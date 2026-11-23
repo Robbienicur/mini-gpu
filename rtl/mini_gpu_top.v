@@ -76,6 +76,7 @@ module mini_gpu_top #(
     localparam S_ESPERA_FIN  = 3'd4;
     localparam S_PREPARA     = 3'd5;
     localparam S_ENVIA       = 3'd6;
+    localparam S_ENVIA_PAUSA = 3'd7;
 
     reg [2:0]   estado;
     reg [3:0]   num;
@@ -212,11 +213,16 @@ module mini_gpu_top #(
                         tx_data  <= paquete[7:0];
                         tx_start <= 1'b1;
                         paquete  <= paquete >> 8;
-                        if (enviados == 6'd56)
-                            estado <= S_ESPERA_OP;
-                        else
-                            enviados <= enviados + 6'd1;
+                        enviados <= enviados + 6'd1;
+                        estado   <= S_ENVIA_PAUSA;
                     end
+                end
+
+                S_ENVIA_PAUSA: begin
+                    if (enviados == 6'd57)
+                        estado <= S_ESPERA_OP;
+                    else
+                        estado <= S_ENVIA;
                 end
 
                 default: estado <= S_ESPERA_OP;

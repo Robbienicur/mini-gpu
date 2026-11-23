@@ -88,12 +88,12 @@ module inversa (
     reg signed [79:0] q;
     always @(*) begin
         if (sh > 0)
-            q = P >>> sh;
+            q = (P + (80'sd1 <<< (sh - 1))) >>> sh;
         else
             q = P <<< (-sh);
     end
 
-    wire signed [73:0] D_red = D >>> 30;
+    wire signed [73:0] D_red = (D + 74'sd536870912) >>> 30;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
