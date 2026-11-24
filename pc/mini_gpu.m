@@ -104,5 +104,5 @@ while true
     if bitand(banderas, 2)
         disp('La FPGA dice: algun numero no cupo y se saturo');
     end
-    disp(['Ciclos de la FPGA = ', num2str(ciclos), '  (', num2str(ciclos * 0.02), ' us a 50 MHz)']);
+    disp(['Ciclos de la FPGA = ', num2str(ciclos), '  (', num2str(ciclos * 0.08), ' us a 12.5 MHz)']);
 end

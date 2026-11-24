@@ -14,6 +14,11 @@ module mini_gpu_top #(
 
     wire reset = ~RESET_N;
 
+    reg [1:0] div = 2'd0;
+    always @(posedge CLOCK_50)
+        div <= div + 2'd1;
+    wire clk = div[1];
+
     wire [7:0] rx_data;
     wire       rx_done;
     reg  [7:0] tx_data;
@@ -21,10 +26,10 @@ module mini_gpu_top #(
     wire       tx_busy;
 
     uart_rx #(
-        .CLK_FREQ(50000000),
+        .CLK_FREQ(12500000),
         .BAUD_RATE(BAUD)
     ) RX0 (
-        .clk(CLOCK_50),
+        .clk(clk),
         .reset(reset),
         .rx(UART_RX),
         .data_out(rx_data),
@@ -32,10 +37,10 @@ module mini_gpu_top #(
     );
 
     uart_tx #(
-        .CLK_FREQ(50000000),
+        .CLK_FREQ(12500000),
         .BAUD_RATE(BAUD)
     ) TX0 (
-        .clk(CLOCK_50),
+        .clk(clk),
         .reset(reset),
         .tx_start(tx_start),
         .data_in(tx_data),
@@ -58,13 +63,13 @@ module mini_gpu_top #(
     );
 
     multiplica MUL (
-        .clk(CLOCK_50), .reset(reset), .start(inicio && op == 3'd3),
+        .clk(clk), .reset(reset), .start(inicio && op == 3'd3),
         .A(A), .B(B),
         .C(C_mul), .done(done_mul), .sat(sat_mul)
     );
 
     inversa INV (
-        .clk(CLOCK_50), .reset(reset), .start(inicio && op == 3'd4),
+        .clk(clk), .reset(reset), .start(inicio && op == 3'd4),
         .A(A),
         .X(X_inv), .det_out(det_inv), .sing(sing_inv), .ovf(ovf_inv), .done(done_inv)
     );
@@ -90,7 +95,7 @@ module mini_gpu_top #(
     reg [5:0]   enviados;
     integer     t;
 
-    always @(posedge CLOCK_50 or posedge reset) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             estado   <= S_ESPERA_OP;
             op       <= 3'd0;

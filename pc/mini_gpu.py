@@ -99,7 +99,7 @@ def main():
             print("Resultado exacto (numpy):")
             print(np.round(exacto, 4))
             print(f"Error absoluto medio (MAE) = {mae:.6f}")
-        print(f"Ciclos de la FPGA = {ciclos}  ({ciclos * 20 / 1000:.2f} us a 50 MHz)")
+        print(f"Ciclos de la FPGA = {ciclos}  ({ciclos * 80 / 1000:.2f} us a 12.5 MHz)")
 
 if __name__ == "__main__":
     main()
