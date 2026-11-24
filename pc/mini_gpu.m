@@ -13,7 +13,7 @@ while true
     disp(" ");
     disp("1) A + B   2) A - B   3) A * B   4) inversa de A   0) salir");
     op = input('Operacion: ');
-    if op < 1 || op > 4
+    if isempty(op) || op < 1 || op > 4
         break;
     end
     n = input('Tamano (2, 3 o 4): ');
@@ -41,6 +41,7 @@ while true
         nb = round(B4' * 1024);
         numeros = [numeros; nb(:)];
     end
+    numeros = min(max(numeros, -131072), 131071);
     numeros = mod(numeros, 2^24);
     for k = 1:length(numeros)
         v = numeros(k);
