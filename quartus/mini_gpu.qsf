@@ -13,12 +13,9 @@ set_global_assignment -name VERILOG_FILE ../rtl/mini_gpu_top.v
 set_global_assignment -name VERILOG_FILE ../rtl/uart_rx.v
 set_global_assignment -name VERILOG_FILE ../rtl/uart_tx.v
 set_global_assignment -name VERILOG_FILE ../rtl/decodificador.v
-set_global_assignment -name VERILOG_FILE ../rtl/suma_resta.v
 set_global_assignment -name VERILOG_FILE ../rtl/multiplica.v
-set_global_assignment -name VERILOG_FILE ../rtl/reciproco.v
 set_global_assignment -name VERILOG_FILE ../rtl/inversa.v
 set_global_assignment -name VERILOG_FILE ../rtl/recip_nr.v
-set_global_assignment -name VERILOG_FILE ../rtl/cg_estencil.v
 
 set_location_assignment PIN_P11 -to CLOCK_50
 set_location_assignment PIN_B8 -to RESET_N
@@ -53,6 +50,20 @@ set_location_assignment PIN_C19 -to HEX3[3]
 set_location_assignment PIN_C20 -to HEX3[4]
 set_location_assignment PIN_D19 -to HEX3[5]
 set_location_assignment PIN_E17 -to HEX3[6]
+set_location_assignment PIN_F18 -to HEX4[0]
+set_location_assignment PIN_E20 -to HEX4[1]
+set_location_assignment PIN_E19 -to HEX4[2]
+set_location_assignment PIN_J18 -to HEX4[3]
+set_location_assignment PIN_H19 -to HEX4[4]
+set_location_assignment PIN_F19 -to HEX4[5]
+set_location_assignment PIN_F20 -to HEX4[6]
+set_location_assignment PIN_J20 -to HEX5[0]
+set_location_assignment PIN_K20 -to HEX5[1]
+set_location_assignment PIN_L18 -to HEX5[2]
+set_location_assignment PIN_N18 -to HEX5[3]
+set_location_assignment PIN_M20 -to HEX5[4]
+set_location_assignment PIN_N19 -to HEX5[5]
+set_location_assignment PIN_N20 -to HEX5[6]
 set_location_assignment PIN_A8 -to LEDR[0]
 set_location_assignment PIN_A9 -to LEDR[1]
 set_location_assignment PIN_A10 -to LEDR[2]

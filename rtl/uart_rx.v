@@ -16,9 +16,12 @@ reg [15:0] clk_count;
 reg [3:0]  bit_index;
 reg [7:0]  rx_shift;
 reg        receiving;
+reg        rx_1, rx_2;
 
 always @(posedge clk or posedge reset) begin
     if (reset) begin
+        rx_1       <= 1'b1;
+        rx_2       <= 1'b1;
         clk_count  <= 0;
         bit_index  <= 0;
         rx_shift   <= 0;
@@ -27,9 +30,11 @@ always @(posedge clk or posedge reset) begin
         data_valid <= 1'b0;
     end else begin
         data_valid <= 1'b0;
+        rx_1       <= rx;
+        rx_2       <= rx_1;
 
         if (!receiving) begin
-            if (rx == 1'b0) begin
+            if (rx_2 == 1'b0) begin
                 receiving <= 1'b1;
                 clk_count <= HALF_BIT;
                 bit_index <= 0;
@@ -41,15 +46,16 @@ always @(posedge clk or posedge reset) begin
                 clk_count <= 0;
 
                 if (bit_index == 0) begin
-                    if (rx == 1'b0)
+                    if (rx_2 == 1'b0)
                         bit_index <= 1;
                     else
                         receiving <= 1'b0;
                 end else if (bit_index <= 8) begin
-                    rx_shift[bit_index - 1] <= rx;
+                    rx_shift[bit_index - 1] <= rx_2;
                     bit_index <= bit_index + 1;
                 end else begin
                     receiving  <= 1'b0;
+                    bit_index  <= 0;
                     data_out   <= rx_shift;
                     data_valid <= 1'b1;
                 end

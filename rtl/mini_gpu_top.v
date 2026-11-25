@@ -1,6 +1,9 @@
 module mini_gpu_top #(
-    parameter BAUD = 9600,
-    parameter NG   = 64
+    parameter BAUD = 115200,
+    parameter NMAX = 128,
+    parameter W    = 32,
+    parameter F    = 20,
+    parameter P    = 16
 )(
     input  wire       CLOCK_50,
     input  wire       RESET_N,
@@ -10,6 +13,8 @@ module mini_gpu_top #(
     output wire [6:0] HEX1,
     output wire [6:0] HEX2,
     output wire [6:0] HEX3,
+    output wire [6:0] HEX4,
+    output wire [6:0] HEX5,
     output wire [9:0] LEDR
 );
 
@@ -49,326 +54,302 @@ module mini_gpu_top #(
         .busy(tx_busy)
     );
 
-    reg [287:0] A, B;
-    reg [2:0]   op;
-    reg         inicio;
+    localparam [W-1:0] UNO = 1 << F;
 
-    wire [287:0] C_sr, C_mul, X_inv;
-    wire         sat_sr, sat_mul, done_mul;
-    wire [31:0]  det_inv;
-    wire         sing_inv, ovf_inv, done_inv;
+    reg  [1:0]   op;
+    reg  [7:0]   n;
+    reg  [7:0]   fila, col;
+    reg          inv_rst, inv_start, mul_start;
+    reg          ld_we;
+    reg  [7:0]   ld_fila, ld_col;
+    reg  [W-1:0] ld_dato;
+    reg          wb;
 
-    suma_resta SR (
-        .A(A), .B(B), .resta(op == 3'd2),
-        .C(C_sr), .sat(sat_sr)
+    wire         inv_done, inv_busy, inv_sing, inv_ovf, inv_dneg;
+    wire [16:0]  inv_dm;
+    wire [15:0]  inv_de;
+    wire [31:0]  inv_ciclos;
+    wire [W-1:0] inv_dato;
+
+    wire         mul_done, mul_sat;
+    wire [7:0]   mul_col;
+    wire [P*W-1:0] mul_C;
+
+    inversa #(.N(NMAX), .W(W), .F(F), .PAR(P)) INV (
+        .clk(clk), .rst(reset | inv_rst), .start(inv_start), .n(n),
+        .done(inv_done), .busy(inv_busy), .sing(inv_sing), .cycles(inv_ciclos), .ovf(inv_ovf),
+        .det_neg(inv_dneg), .det_m(inv_dm), .det_e(inv_de),
+        .ld_we(ld_we), .ld_row(ld_fila), .ld_col(ld_col), .ld_data(ld_dato),
+        .rd_row(fila), .rd_col(op == 2'd1 ? mul_col : col), .rd_data(inv_dato)
     );
 
-    multiplica MUL (
-        .clk(clk), .reset(reset), .start(inicio && op == 3'd3),
-        .A(A), .B(B),
-        .C(C_mul), .done(done_mul), .sat(sat_mul)
+    multiplica #(.NMAX(NMAX), .W(W), .F(F), .P(P)) MUL (
+        .clk(clk), .reset(reset), .n(n),
+        .wr_b(wb), .wr_fila(ld_fila), .wr_col(ld_col), .wr_dato(ld_dato),
+        .start(mul_start), .fila(fila), .col0(col),
+        .a_col(mul_col), .a_dato(inv_dato),
+        .done(mul_done), .C(mul_C), .sat(mul_sat)
     );
 
-    inversa INV (
-        .clk(clk), .reset(reset), .start(inicio && op == 3'd4),
-        .A(A),
-        .X(X_inv), .det_out(det_inv), .sing(sing_inv), .ovf(ovf_inv), .done(done_inv)
-    );
+    localparam S_OP       = 4'd0;
+    localparam S_N        = 4'd1;
+    localparam S_DATO     = 4'd2;
+    localparam S_RELLENA  = 4'd3;
+    localparam S_INV      = 4'd4;
+    localparam S_INV_FIN  = 4'd5;
+    localparam S_LEE      = 4'd6;
+    localparam S_LEE2     = 4'd7;
+    localparam S_INV_SIG  = 4'd8;
+    localparam S_M_CALC   = 4'd9;
+    localparam S_M_ESPERA = 4'd10;
+    localparam S_M_MANDA  = 4'd11;
+    localparam S_M_SIG    = 4'd12;
+    localparam S_COLA     = 4'd13;
+    localparam S_TX       = 4'd14;
+    localparam S_TX_PAUSA = 4'd15;
 
-    localparam LOGN = 2 * $clog2(NG);
-    localparam N    = NG * NG;
-
-    reg                c_we;
-    reg  [LOGN-1:0]    c_addr;
-    reg  [31:0]        c_b;
-    reg                c_start;
-    wire               c_done, c_conv, c_nc, c_stag, c_err, c_busy;
-    wire [15:0]        c_iters;
-    wire [31:0]        c_ciclos;
-    wire signed [31:0] c_x;
-
-    cg_estencil #(.NG(NG), .WV(32), .FV(24)) CG (
-        .clk(clk), .rst(reset),
-        .ld_b_we(c_we), .ld_b_addr(c_addr), .ld_b_data(c_b),
-        .start(c_start), .maxit(16'd300), .tolsh(7'd28),
-        .done(c_done), .busy(c_busy), .conv(c_conv), .nc(c_nc), .stag(c_stag), .err(c_err),
-        .iters(c_iters), .cycles(c_ciclos),
-        .x_addr(c_addr), .x_data(c_x)
-    );
-
-    reg  [7:0] t_arriba, t_abajo, t_izq, t_der;
-    reg  [1:0] tn;
-    wire [LOGN/2-1:0] fila = c_addr[LOGN-1:LOGN/2];
-    wire [LOGN/2-1:0] col  = c_addr[LOGN/2-1:0];
-    wire [31:0] b_borde = ((fila == 0)      ? {8'd0, t_arriba, 16'd0} : 32'd0)
-                        + ((fila == NG - 1) ? {8'd0, t_abajo,  16'd0} : 32'd0)
-                        + ((col  == 0)      ? {8'd0, t_izq,    16'd0} : 32'd0)
-                        + ((col  == NG - 1) ? {8'd0, t_der,    16'd0} : 32'd0);
-    wire [31:0] c_xr   = c_x + 32'd32768;
-    wire [7:0]  grados = c_xr[31] ? 8'd0 : (c_xr[30:24] != 7'd0) ? 8'd255 : c_xr[23:16];
-
-    localparam S_ESPERA_OP   = 4'd0;
-    localparam S_RECIBE_A    = 4'd1;
-    localparam S_RECIBE_B    = 4'd2;
-    localparam S_CALCULA     = 4'd3;
-    localparam S_ESPERA_FIN  = 4'd4;
-    localparam S_PREPARA     = 4'd5;
-    localparam S_ENVIA       = 4'd6;
-    localparam S_ENVIA_PAUSA = 4'd7;
-    localparam S_C_TEMP      = 4'd8;
-    localparam S_C_CARGA     = 4'd9;
-    localparam S_C_SIG       = 4'd10;
-    localparam S_C_CORRE     = 4'd11;
-    localparam S_C_LEE       = 4'd12;
-    localparam S_C_ESPERA    = 4'd13;
-    localparam S_C_MANDA     = 4'd14;
-    localparam S_C_PAUSA     = 4'd15;
-
-    reg [3:0]   estado;
-    reg [3:0]   num;
-    reg [1:0]   byte_n;
-    reg [7:0]   b0, b1;
-    reg [31:0]  ciclos;
-    reg [287:0] R;
-    reg [31:0]  det;
-    reg         sing, sat;
-    reg [455:0] paquete;
-    reg [5:0]   enviados;
-    integer     t;
+    reg [3:0]  estado, regreso;
+    reg [1:0]  byte_n;
+    reg [23:0] pal;
+    reg        cual;
+    reg [31:0] ciclos;
+    reg        sing, sat, dneg;
+    reg [16:0] dm;
+    reg [15:0] de;
+    reg [79:0] salida;
+    reg [3:0]  faltan;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
-            estado   <= S_ESPERA_OP;
-            op       <= 3'd0;
-            num      <= 4'd0;
-            byte_n   <= 2'd0;
-            b0       <= 8'd0;
-            b1       <= 8'd0;
-            A        <= 288'd0;
-            B        <= 288'd0;
-            inicio   <= 1'b0;
-            ciclos   <= 32'd0;
-            R        <= 288'd0;
-            det      <= 32'd0;
-            sing     <= 1'b0;
-            sat      <= 1'b0;
-            paquete  <= 456'd0;
-            enviados <= 6'd0;
-            tx_start <= 1'b0;
-            tx_data  <= 8'd0;
-            c_we     <= 1'b0;
-            c_addr   <= 0;
-            c_b      <= 32'd0;
-            c_start  <= 1'b0;
-            tn       <= 2'd0;
-            t_arriba <= 8'd0;
-            t_abajo  <= 8'd0;
-            t_izq    <= 8'd0;
-            t_der    <= 8'd0;
+            estado    <= S_OP;
+            regreso   <= S_OP;
+            op        <= 2'd0;
+            n         <= 8'd0;
+            fila      <= 8'd0;
+            col       <= 8'd0;
+            byte_n    <= 2'd0;
+            pal       <= 24'd0;
+            cual      <= 1'b0;
+            inv_rst   <= 1'b0;
+            inv_start <= 1'b0;
+            mul_start <= 1'b0;
+            ld_we     <= 1'b0;
+            ld_fila   <= 8'd0;
+            ld_col    <= 8'd0;
+            ld_dato   <= 0;
+            wb        <= 1'b0;
+            ciclos    <= 32'd0;
+            sing      <= 1'b0;
+            sat       <= 1'b0;
+            dneg      <= 1'b0;
+            dm        <= 17'd0;
+            de        <= 16'd0;
+            salida    <= 80'd0;
+            faltan    <= 4'd0;
+            tx_start  <= 1'b0;
+            tx_data   <= 8'd0;
         end else begin
-            tx_start <= 1'b0;
-            inicio   <= 1'b0;
-            c_we     <= 1'b0;
-            c_start  <= 1'b0;
+            tx_start  <= 1'b0;
+            inv_rst   <= 1'b0;
+            inv_start <= 1'b0;
+            mul_start <= 1'b0;
+            ld_we     <= 1'b0;
+            wb        <= 1'b0;
 
             case (estado)
-                S_ESPERA_OP: begin
-                    if (rx_done && rx_data >= 8'd1 && rx_data <= 8'd4) begin
-                        op     <= rx_data[2:0];
-                        num    <= 4'd0;
+                S_OP: begin
+                    if (rx_done && (rx_data == 8'd1 || rx_data == 8'd2)) begin
+                        op      <= rx_data[1:0];
+                        inv_rst <= 1'b1;
+                        estado  <= S_N;
+                    end
+                end
+
+                S_N: begin
+                    if (rx_done) begin
+                        n      <= (rx_data == 8'd0 || rx_data > NMAX) ? NMAX : rx_data;
+                        fila   <= 8'd0;
+                        col    <= 8'd0;
                         byte_n <= 2'd0;
-                        estado <= S_RECIBE_A;
-                    end else if (rx_done && rx_data == 8'd5) begin
-                        op     <= 3'd5;
-                        tn     <= 2'd0;
-                        estado <= S_C_TEMP;
+                        cual   <= 1'b0;
+                        ciclos <= 32'd0;
+                        sing   <= 1'b0;
+                        sat    <= 1'b0;
+                        dneg   <= 1'b0;
+                        dm     <= 17'd0;
+                        de     <= 16'd0;
+                        estado <= S_DATO;
                     end
                 end
 
-                S_C_TEMP: begin
+                S_DATO: begin
                     if (rx_done) begin
-                        if (tn == 2'd0) t_arriba <= rx_data;
-                        if (tn == 2'd1) t_abajo  <= rx_data;
-                        if (tn == 2'd2) t_izq    <= rx_data;
-                        if (tn == 2'd3) t_der    <= rx_data;
-                        tn <= tn + 2'd1;
-                        if (tn == 2'd3) begin
-                            c_addr <= 0;
-                            estado <= S_C_CARGA;
-                        end
-                    end
-                end
-
-                S_C_CARGA: begin
-                    c_we   <= 1'b1;
-                    c_b    <= b_borde;
-                    estado <= S_C_SIG;
-                end
-
-                S_C_SIG: begin
-                    if (c_addr == N - 1) begin
-                        c_start <= 1'b1;
-                        estado  <= S_C_CORRE;
-                    end else begin
-                        c_addr <= c_addr + 1'b1;
-                        estado <= S_C_CARGA;
-                    end
-                end
-
-                S_C_CORRE: begin
-                    if (c_done) begin
-                        ciclos <= c_ciclos;
-                        sing   <= ~c_conv;
-                        sat    <= c_nc | c_stag | c_err;
-                        c_addr <= 0;
-                        estado <= S_C_LEE;
-                    end
-                end
-
-                S_C_LEE: begin
-                    estado <= S_C_ESPERA;
-                end
-
-                S_C_ESPERA: begin
-                    estado <= S_C_MANDA;
-                end
-
-                S_C_MANDA: begin
-                    if (!tx_busy) begin
-                        tx_data  <= grados;
-                        tx_start <= 1'b1;
-                        estado   <= S_C_PAUSA;
-                    end
-                end
-
-                S_C_PAUSA: begin
-                    if (c_addr == N - 1) begin
-                        paquete[55:0] <= {ciclos, 4'd0, c_err, c_stag, c_nc, c_conv, c_iters};
-                        enviados      <= 6'd50;
-                        estado        <= S_ENVIA;
-                    end else begin
-                        c_addr <= c_addr + 1'b1;
-                        estado <= S_C_LEE;
-                    end
-                end
-
-                S_RECIBE_A: begin
-                    if (rx_done) begin
-                        if (byte_n == 2'd0) begin
-                            b0     <= rx_data;
-                            byte_n <= 2'd1;
-                        end else if (byte_n == 2'd1) begin
-                            b1     <= rx_data;
-                            byte_n <= 2'd2;
+                        if (byte_n != 2'd3) begin
+                            pal    <= {rx_data, pal[23:8]};
+                            byte_n <= byte_n + 2'd1;
                         end else begin
-                            A[18*num +: 18] <= {rx_data[1:0], b1, b0};
-                            byte_n <= 2'd0;
-                            if (num == 4'd15) begin
-                                num <= 4'd0;
-                                if (op == 3'd4)
-                                    estado <= S_CALCULA;
-                                else
-                                    estado <= S_RECIBE_B;
+                            byte_n  <= 2'd0;
+                            ld_fila <= fila;
+                            ld_col  <= col;
+                            ld_dato <= {rx_data, pal};
+                            if (cual == 1'b0)
+                                ld_we <= 1'b1;
+                            else
+                                wb <= 1'b1;
+                            if (col == n - 1) begin
+                                col <= 8'd0;
+                                if (fila == n - 1) begin
+                                    fila <= 8'd0;
+                                    if (op == 2'd1 && cual == 1'b0)
+                                        cual <= 1'b1;
+                                    else if (op == 2'd1)
+                                        estado <= S_M_CALC;
+                                    else
+                                        estado <= S_RELLENA;
+                                end else begin
+                                    fila <= fila + 8'd1;
+                                end
                             end else begin
-                                num <= num + 4'd1;
+                                col <= col + 8'd1;
                             end
                         end
                     end
                 end
 
-                S_RECIBE_B: begin
-                    if (rx_done) begin
-                        if (byte_n == 2'd0) begin
-                            b0     <= rx_data;
-                            byte_n <= 2'd1;
-                        end else if (byte_n == 2'd1) begin
-                            b1     <= rx_data;
-                            byte_n <= 2'd2;
+                S_RELLENA: begin
+                    ld_we   <= (fila >= n) || (col >= n);
+                    ld_fila <= fila;
+                    ld_col  <= col;
+                    ld_dato <= (fila == col) ? UNO : 0;
+                    if (col == NMAX - 1) begin
+                        col <= 8'd0;
+                        if (fila == NMAX - 1) begin
+                            fila   <= 8'd0;
+                            estado <= S_INV;
                         end else begin
-                            B[18*num +: 18] <= {rx_data[1:0], b1, b0};
-                            byte_n <= 2'd0;
-                            if (num == 4'd15) begin
-                                num    <= 4'd0;
-                                estado <= S_CALCULA;
-                            end else begin
-                                num <= num + 4'd1;
-                            end
+                            fila <= fila + 8'd1;
                         end
+                    end else begin
+                        col <= col + 8'd1;
                     end
                 end
 
-                S_CALCULA: begin
-                    inicio <= 1'b1;
-                    ciclos <= 32'd0;
-                    estado <= S_ESPERA_FIN;
+                S_INV: begin
+                    inv_start <= 1'b1;
+                    estado    <= S_INV_FIN;
                 end
 
-                S_ESPERA_FIN: begin
+                S_INV_FIN: begin
+                    if (inv_done) begin
+                        ciclos <= inv_ciclos;
+                        sing   <= inv_sing;
+                        sat    <= inv_ovf;
+                        dneg   <= inv_sing ? 1'b0 : inv_dneg;
+                        dm     <= inv_sing ? 17'd0 : inv_dm;
+                        de     <= inv_sing ? 16'd0 : inv_de;
+                        estado <= S_LEE;
+                    end
+                end
+
+                S_LEE: begin
+                    estado <= S_LEE2;
+                end
+
+                S_LEE2: begin
+                    salida[W-1:0] <= inv_dato;
+                    faltan        <= 4'd4;
+                    regreso       <= S_INV_SIG;
+                    estado        <= S_TX;
+                end
+
+                S_INV_SIG: begin
+                    estado <= S_LEE;
+                    if (col == n - 1) begin
+                        col <= 8'd0;
+                        if (fila == n - 1)
+                            estado <= S_COLA;
+                        else
+                            fila <= fila + 8'd1;
+                    end else begin
+                        col <= col + 8'd1;
+                    end
+                end
+
+                S_M_CALC: begin
+                    mul_start <= 1'b1;
+                    ciclos    <= ciclos + 32'd1;
+                    estado    <= S_M_ESPERA;
+                end
+
+                S_M_ESPERA: begin
                     ciclos <= ciclos + 32'd1;
-                    if (op == 3'd1 || op == 3'd2) begin
-                        R      <= C_sr;
-                        det    <= 32'd0;
-                        sing   <= 1'b0;
-                        sat    <= sat_sr;
-                        estado <= S_PREPARA;
-                    end else if (op == 3'd3 && done_mul) begin
-                        R      <= C_mul;
-                        det    <= 32'd0;
-                        sing   <= 1'b0;
-                        sat    <= sat_mul;
-                        estado <= S_PREPARA;
-                    end else if (op == 3'd4 && done_inv) begin
-                        R      <= X_inv;
-                        det    <= det_inv;
-                        sing   <= sing_inv;
-                        sat    <= ovf_inv;
-                        estado <= S_PREPARA;
+                    if (mul_done) begin
+                        sat    <= sat | mul_sat;
+                        estado <= S_M_MANDA;
                     end
                 end
 
-                S_PREPARA: begin
-                    for (t = 0; t < 16; t = t + 1)
-                        paquete[24*t +: 24] <= {{6{R[18*t + 17]}}, R[18*t +: 18]};
-                    paquete[415:384] <= det;
-                    paquete[423:416] <= {6'd0, sat, sing};
-                    paquete[455:424] <= ciclos;
-                    enviados <= 6'd0;
-                    estado   <= S_ENVIA;
+                S_M_MANDA: begin
+                    salida[W-1:0] <= mul_C[col[3:0]*W +: W];
+                    faltan        <= 4'd4;
+                    regreso       <= S_M_SIG;
+                    estado        <= S_TX;
                 end
 
-                S_ENVIA: begin
+                S_M_SIG: begin
+                    if (col == n - 1) begin
+                        col <= 8'd0;
+                        if (fila == n - 1) begin
+                            estado <= S_COLA;
+                        end else begin
+                            fila   <= fila + 8'd1;
+                            estado <= S_M_CALC;
+                        end
+                    end else begin
+                        col    <= col + 8'd1;
+                        estado <= (col[3:0] == P - 1) ? S_M_CALC : S_M_MANDA;
+                    end
+                end
+
+                S_COLA: begin
+                    salida  <= {ciclos, de, 7'd0, dm, 5'd0, dneg, sat, sing};
+                    faltan  <= 4'd10;
+                    regreso <= S_OP;
+                    estado  <= S_TX;
+                end
+
+                S_TX: begin
                     if (!tx_busy) begin
-                        tx_data  <= paquete[7:0];
+                        tx_data  <= salida[7:0];
                         tx_start <= 1'b1;
-                        paquete  <= paquete >> 8;
-                        enviados <= enviados + 6'd1;
-                        estado   <= S_ENVIA_PAUSA;
+                        salida   <= salida >> 8;
+                        faltan   <= faltan - 4'd1;
+                        estado   <= S_TX_PAUSA;
                     end
                 end
 
-                S_ENVIA_PAUSA: begin
-                    if (enviados == 6'd57)
-                        estado <= S_ESPERA_OP;
-                    else
-                        estado <= S_ENVIA;
+                S_TX_PAUSA: begin
+                    estado <= (faltan == 4'd0) ? regreso : S_TX;
                 end
 
-                default: estado <= S_ESPERA_OP;
+                default: estado <= S_OP;
             endcase
         end
     end
 
-    wire [15:0] mostrar = (op == 3'd5) ? c_iters : ciclos[15:0];
-
-    Decodificador D0 (.hex(mostrar[3:0]),   .HEX0(HEX0));
-    Decodificador D1 (.hex(mostrar[7:4]),   .HEX0(HEX1));
-    Decodificador D2 (.hex(mostrar[11:8]),  .HEX0(HEX2));
-    Decodificador D3 (.hex(mostrar[15:12]), .HEX0(HEX3));
+    Decodificador D0 (.hex(ciclos[3:0]),   .HEX0(HEX0));
+    Decodificador D1 (.hex(ciclos[7:4]),   .HEX0(HEX1));
+    Decodificador D2 (.hex(ciclos[11:8]),  .HEX0(HEX2));
+    Decodificador D3 (.hex(ciclos[15:12]), .HEX0(HEX3));
+    Decodificador D4 (.hex(ciclos[19:16]), .HEX0(HEX4));
+    Decodificador D5 (.hex(ciclos[23:20]), .HEX0(HEX5));
 
     assign LEDR[0]   = sing;
     assign LEDR[1]   = sat;
-    assign LEDR[4:2] = op;
+    assign LEDR[2]   = dneg;
+    assign LEDR[3]   = (op == 2'd1);
+    assign LEDR[4]   = (op == 2'd2);
     assign LEDR[8:5] = 4'd0;
-    assign LEDR[9]   = (estado != S_ESPERA_OP);
+    assign LEDR[9]   = (estado != S_OP);
 
 endmodule

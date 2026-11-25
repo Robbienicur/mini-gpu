@@ -3,15 +3,17 @@
 static const int FPGA_RX_PIN = 16;
 static const int FPGA_TX_PIN = 17;
 
-static const uint32_t PC_BAUD   = 9600;
-static const uint32_t FPGA_BAUD = 9600;
+static const uint32_t PC_BAUD   = 115200;
+static const uint32_t FPGA_BAUD = 115200;
 
 HardwareSerial FPGA_Serial(2);
 
 void setup() {
+  Serial.setRxBufferSize(4096);
   Serial.begin(PC_BAUD);
   delay(500);
 
+  FPGA_Serial.setRxBufferSize(4096);
   FPGA_Serial.begin(FPGA_BAUD, SERIAL_8N1, FPGA_RX_PIN, FPGA_TX_PIN);
 
   Serial.println("ESP32 listo: puente PC <-> FPGA");
