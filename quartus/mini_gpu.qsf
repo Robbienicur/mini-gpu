@@ -17,6 +17,8 @@ set_global_assignment -name VERILOG_FILE ../rtl/suma_resta.v
 set_global_assignment -name VERILOG_FILE ../rtl/multiplica.v
 set_global_assignment -name VERILOG_FILE ../rtl/reciproco.v
 set_global_assignment -name VERILOG_FILE ../rtl/inversa.v
+set_global_assignment -name VERILOG_FILE ../rtl/recip_nr.v
+set_global_assignment -name VERILOG_FILE ../rtl/cg_estencil.v
 
 set_location_assignment PIN_P11 -to CLOCK_50
 set_location_assignment PIN_B8 -to RESET_N

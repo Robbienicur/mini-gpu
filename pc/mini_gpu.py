@@ -7,7 +7,8 @@ import serial
 from modelo import a_fijo, a_real
 
 BAUD = 9600
-OPERACIONES = {1: "A + B", 2: "A - B", 3: "A * B", 4: "inversa de A"}
+NG = 64
+OPERACIONES = {1: "A + B", 2: "A - B", 3: "A * B", 4: "inversa de A", 5: "calor en placa"}
 
 def tres_bytes(v):
     v &= 0xFFFFFF
@@ -53,6 +54,52 @@ def manda(puerto, op, A, B):
     ciclos = int.from_bytes(r[53:57], "little")
     return C, det, banderas, ciclos
 
+def placa_exacta(t):
+    n = NG
+    T1 = 2 * np.eye(n) - np.eye(n, k=1) - np.eye(n, k=-1)
+    A = np.kron(np.eye(n), T1) + np.kron(T1, np.eye(n))
+    b = np.zeros((n, n))
+    b[0, :] += t[0]
+    b[n - 1, :] += t[1]
+    b[:, 0] += t[2]
+    b[:, n - 1] += t[3]
+    return np.linalg.solve(A, b.ravel()).reshape(n, n)
+
+
+def calor(puerto):
+    linea = input("Temperaturas de los bordes: arriba abajo izquierda derecha (0 a 255): ")
+    t = [max(0, min(255, int(round(float(v))))) for v in linea.split()][:4]
+    puerto.reset_input_buffer()
+    puerto.write(bytes([5] + t))
+    total = NG * NG + 7
+    puerto.timeout = 30
+    r = puerto.read(total)
+    puerto.timeout = 3
+    if len(r) < total:
+        print(f"No llego la respuesta completa ({len(r)} de {total} bytes)")
+        return
+    P = np.array(list(r[:NG * NG]), float).reshape(NG, NG)
+    vueltas = r[NG * NG] | r[NG * NG + 1] << 8
+    estado = r[NG * NG + 2]
+    ciclos = int.from_bytes(r[NG * NG + 3:NG * NG + 7], "little")
+    exacto = placa_exacta(t)
+    print(f"Ecuaciones resueltas: {NG * NG}")
+    print(f"Vueltas de gradiente conjugado: {vueltas}")
+    print("Convergio" if estado & 1 else "La FPGA dice: no convergio")
+    print(f"Error maximo contra numpy = {np.abs(P - exacto).max():.3f} grados")
+    print(f"Ciclos de la FPGA = {ciclos}  ({ciclos * 80e-9:.3f} s a 12.5 MHz)")
+    try:
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+        for a, M, nombre in ((ax[0], P, "FPGA (gradiente conjugado)"), (ax[1], exacto, "numpy (exacto)")):
+            im = a.imshow(M, cmap="hot")
+            a.set_title(nombre)
+            fig.colorbar(im, ax=a)
+        plt.show()
+    except ImportError:
+        print("(instala matplotlib para ver el mapa)")
+
+
 def main():
     nombre_puerto = sys.argv[1] if len(sys.argv) > 1 else "COM4"
     puerto = serial.Serial(nombre_puerto, BAUD, timeout=3)
@@ -66,6 +113,9 @@ def main():
         op = int(input("Operacion (0 para salir): ") or 0)
         if op not in OPERACIONES:
             break
+        if op == 5:
+            calor(puerto)
+            continue
         n = int(input("Tamano (2, 3 o 4): ") or 4)
 
         A = pedir_matriz("A", n)
